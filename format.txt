@@ -1,0 +1,230 @@
+FILE
+
+  A dump file consists of:
+
+  * The dump file header.
+
+  * A rowset for the "pragmas" pseudo-table.
+
+  * A rowset for the "schema" pseudo-table.
+
+  * Rowsets for each non-virtual table in the source database.
+
+  * An ENDDUMP marker.
+
+
+HEADER
+
+  The dump file header consists of:
+
+  * A five-byte magic string to distinguish this from every other
+    binary format out there. Values (hex):
+        53 33 42 44 1A
+
+  * Two bytes representing a major.minor version number.
+    The current version is 0.0.
+
+  * One byte representing the database text encoding.  The values are
+    the same as in a database file header; see the definitions
+    of SQLITE_UTF8, SQLITE_UTF16LE, and SQLITE_UTF16BE in <sqlite3.h>.
+
+  The encoding from the database is also used for all text in the dump,
+  even the pragma names in the pragmas rowset which never use any
+  non-ASCII characters.
+
+
+PRAGMAS
+
+  The "pragmas" pseudo-table has three columns.
+
+      create table pragmas (
+          phase integer not null,
+          name text not null,
+          value
+      );
+
+  The phase specifies at which point in the database reconstruction
+  process to apply the pragma.  Currently, these phases are defined:
+    10  before beginning the big transaction
+    20  inside the big transaction
+    30  after committing the big transaction
+
+  Only pragmas with a permanent effect on the database are included.
+  This is the current list:
+    page_size
+    auto_vacuum
+    application_id
+    user_version
+    journal_mode
+
+  The encoding pragma does not appear here since that information
+  is stored in the dump file header.
+
+
+SCHEMA
+
+  The "schema" pseudo-table has three columns.
+
+      create table schema (
+          phase integer not null,
+          name text not null,
+          sql text not null
+      );
+
+  The phase specifies the type of the object and at which point
+  in the database reconstruction process to create it.  Currently,
+  these phases are defined:
+    10  non-virtual tables
+    20  indexes
+    30  virtual tables
+    40  views
+    50  triggers
+
+  The name and sql columns are copied from the sqlite_schema table
+  of the source database.
+
+  Internal indexes and other objects where sql is null are omitted.
+
+
+ROWSET
+
+  A rowset consists of:
+
+  * A ROWSET marker with its associated unsigned integer and text values.
+    The unsigned integer value is one less than the number of columns;
+    this makes it impossible to represent zero-column rowsets.
+    The text value gives the name of the rowset.
+
+  * Some number of rows, each consisting of the specified number
+    of columns.
+
+  * An ENDSET marker.
+
+
+COLUMN
+
+  A column consists of one of the following:
+
+  * A NULLCOL marker.
+
+  * An INTCOL marker with its associated signed integer value.
+
+  * A FLOATCOL marker with its associated floating-point value.
+
+  * A TEXTCOL marker with its associated text value.
+
+  * A BLOBCOL marker with its associated blob value.
+
+
+MARKER
+
+  A marker consists of a single byte.  Markers with associated values
+  have the width(s) of the value(s) encoded in them.
+
+  For text and blob values, the width is actually the width of the unsigned
+  integer giving the size of the value.  The text or blob bytes follow
+  immediately after this size.
+
+  Since the widths can vary between 0 and 8 bytes, markers are encoded
+  in base 9.  The rest of this section uses base-9 numbers.
+
+  These markers have no widths encoded:
+  * NULLCOL  000
+  * ENDSET   001
+  * ENDDUMP  002
+
+  These markers have one width encoded in the least significant digit:
+  * INTCOL   100...108  (value width)
+  * FLOATCOL 110...118  (value width)
+  * TEXTCOL  120...128  (value size width)
+  * BLOBCOL  130...138  (value size width)
+
+  This marker has two widths encoded in the two least significant digits:
+  * ROWSET   200...288  (column count width, name size width)
+
+
+UNSIGNED INTEGER
+
+  Unsigned integer values are stored in a big-endian variable-width format
+  with no redundant encodings.  Table of edge cases:
+
+                   value  width  bytes
+    ====================  =====  =======================
+                       0      0 
+                       1      1  00
+                     256      1  FF
+                     257      2  00 00
+                   65792      2  FF FF
+                   65793      3  00 00 00
+                16843008      3  FF FF FF
+                16843009      4  00 00 00 00
+              4311810304      4  FF FF FF FF
+              4311810305      5  00 00 00 00 00
+           1103823438080      5  FF FF FF FF FF
+           1103823438081      6  00 00 00 00 00 00
+         282578800148736      6  FF FF FF FF FF FF
+         282578800148737      7  00 00 00 00 00 00 00
+       72340172838076672      7  FF FF FF FF FF FF FF
+       72340172838076673      8  00 00 00 00 00 00 00 00
+    18446744073709551615      8  FE FE FE FE FE FE FE FE
+
+
+SIGNED INTEGER
+
+  Signed integer values are stored in a big-endian variable-width format
+  with no redundant encodings.  Table of edge cases:
+
+                   value  width  bytes
+    ====================  =====  =======================
+    -9223372036854775808      8  80 80 80 80 80 80 80 80
+      -36170086419038337      8  FF FF FF FF FF FF FF FF
+      -36170086419038336      7  80 00 00 00 00 00 00
+        -141289400074369      7  FF FF FF FF FF FF FF
+        -141289400074368      6  80 00 00 00 00 00
+           -551911719041      6  FF FF FF FF FF FF
+           -551911719040      5  80 00 00 00 00
+             -2155905153      5  FF FF FF FF FF
+             -2155905152      4  80 00 00 00
+                -8421505      4  FF FF FF FF
+                -8421504      3  80 00 00
+                  -32897      3  FF FF FF
+                  -32896      2  80 00
+                    -129      2  FF FF
+                    -128      1  80
+                      -1      1  FF
+                       0      0 
+                       1      1  00
+                     128      1  7F
+                     129      2  00 00
+                   32896      2  7F FF
+                   32897      3  00 00 00
+                 8421504      3  7F FF FF
+                 8421505      4  00 00 00 00
+              2155905152      4  7F FF FF FF
+              2155905153      5  00 00 00 00 00
+            551911719040      5  7F FF FF FF FF
+            551911719041      6  00 00 00 00 00 00
+         141289400074368      6  7F FF FF FF FF FF
+         141289400074369      7  00 00 00 00 00 00 00
+       36170086419038336      7  7F FF FF FF FF FF FF
+       36170086419038337      8  00 00 00 00 00 00 00 00
+     9223372036854775807      8  7F 7F 7F 7F 7F 7F 7F 7E
+
+
+FLOAT
+
+  Floating-point values are stored in big-endian IEEE 754 64-bit format,
+  except that trailing 0 bytes are omitted.  Table of examples:
+
+    value                      width  bytes
+    =========================  =====  =======================
+               0.0                 0
+               2.0                 1  40                          
+               2.5                 2  40 04               
+             523.125               3  40 80 59            
+            1427.8125              4  40 96 4F 40                 
+         3964110.6953125           5  41 4E 3E 67 59      
+       109343167.240234375         6  41 9A 11 C6 FC F6   
+     13967955521.46435546875       7  42 0A 04 70 B2 0B B7        
+    408288093043.374755859375      8  42 57 C3 F7 78 DC D7 FC
+

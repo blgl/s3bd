@@ -1,0 +1,26 @@
+WHAT
+
+  The specification of a streamable binary dump format for SQLite3
+  databases as well as reference code for producing and consuming such
+  dumps.  No effort has been expended on making the code compatible with
+  non-POSIX systems.
+
+WHY
+
+  Compared to the textual dumps produced and consumed by the sqlite3 shell,
+  binary dumps are smaller and can be read faster.  (Writing them takes
+  about the same amount of time.)
+
+  The SQLite3 principle of text validation is "garbage in, garbage out".
+  Garbage entered in UTF-16 mode can't be losslessly extracted in UTF-8
+  mode and vice versa.  The database file gigo.sqlite is included as an
+  example of this.  pragma integrity_check reports no errors, but the
+  shell's .dump command produces output that causes errors if you try to
+  load it into a new database.
+
+HOW
+
+  The included Makefile should work with either GCC or Clang on POSIX-like
+  systems.  It builds two executables (s3bdstore, s3bdload) and a static
+  library (libs3bd.a).
+
